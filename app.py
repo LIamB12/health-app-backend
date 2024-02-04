@@ -1,56 +1,134 @@
-from flask import Flask
-from flask_restful import Api, Resource
+from flask import Flask, request, jsonify
+from flask_restful import Api
 from flask_cors import CORS
-from cohere.responses.classify import Example
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNet
+from tensorflow.keras import layers, models
+import requests
+from io import BytesIO
 
 
-import cohere
-co = cohere.Client('avqgNUNwZIDVuC3Pmi7nffUlXaibIJoRpr5WQKja')
+import matplotlib.pyplot as plt
+
+train_datagen = ImageDataGenerator(
+    rescale=1.0/255.0,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
+
+test_datagen = ImageDataGenerator(rescale=1.0/255.0)
+
+train_generator = train_datagen.flow_from_directory(
+    './brain_tumor_dataset/train',
+    target_size=(224, 224),  # MobileNet input size
+    batch_size=32,
+    class_mode='categorical'
+)
+
+test_generator = test_datagen.flow_from_directory(
+    './brain_tumor_dataset/test',
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical'
+)
+
+base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+
+# Freeze the layers of the pre-trained model
+for layer in base_model.layers:
+    layer.trainable = False
+
+model = models.Sequential()
+
+# Add MobileNet base
+model.add(base_model)
+
+# Add custom layers
+model.add(layers.GlobalAveragePooling2D())
+model.add(layers.Dense(256, activation='relu'))
+model.add(layers.Dropout(0.5))
+model.add(layers.Dense(2, activation='softmax'))  # num_classes is the number of your custom categories
+
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(train_generator, epochs=50, validation_data=test_generator)
+
+# Example for making predictions
+img = tf.keras.preprocessing.image.load_img('./brain_tumor_dataset/test/yes/Y185.JPG', target_size=(224, 224))
+img_array = tf.keras.preprocessing.image.img_to_array(img)
+img_array = tf.expand_dims(img_array, 0)  # Create a batch
+
+predictions = model.predict(img_array)
+print(predictions)
+
 
 app = Flask(__name__)
 CORS(app)
 api = Api(app)
 
-@app.route('/api/data/<string:input_string>', methods=['GET'])
-def answer_question(input_string):
-    inputs = input_string.split("_")
-    userQuestion = inputs[0]
-    userGrade = inputs[1]
-    tutor_prompt = "Write a detailed solution in the words of a tutor, to the question: " + userQuestion + ", and cater your response to a student in" + userGrade
+@app.route('/predict', methods=['POST'])
+def predict():
+
+    req = request.get_json()
+    print(req.get("url"))
+    '''
+    # Get the image file from the request
+    img = tf.keras.preprocessing.image.load_img(file, target_size=(224, 224))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)  # Create a batch
+
+    predictions = model.predict(img_array)
+
+    # Get the class index with the highest probability
+    predicted_class_index = np.argmax(predictions)
+
+    # Return the predicted class and probability
+    '''
+    response = {
+        'class_index': "hello",
+        'probability': "bye"
+    }
+
+    return jsonify(response)
     
-    response = co.generate(
-    model='command-nightly',
-    prompt= tutor_prompt,
-    max_tokens=300,
-    temperature=0.25,
-    k=0,
-    stop_sequences=[],
-    return_likelihoods='NONE')
-    return('{}'.format(response.generations[0].text))
 
+@app.route('/predict_url', methods=['POST'])
+def predict_url():
+    # Get the image URL from the request
+    data = request.get_json()
+    image_url = data.get('url')
+    print(image_url)
 
-@app.route('/api/sayhi/<string:input_string>', methods=['GET'])
-def say_hi(input_string):
-    response = co.generate(
-    model='command-xlarge-nightly',
-    prompt= "Say hi to" + input_string + " and briefly introduce yourself as an online AI tutor ",
-    max_tokens=300,
-    temperature=0.1,
-    k=0,
-    stop_sequences=[],
-    return_likelihoods='NONE')
-    return('{}'.format(response.generations[0].text))
+    # Fetch the image from the URL
+    response = requests.get(image_url)
+    print(response)
+    img = tf.keras.preprocessing.image.load_img(BytesIO(response.content), target_size=(224, 224))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.keras.applications.mobilenet.preprocess_input(np.expand_dims(img_array, axis=0))
 
+    # Make predictions
+    predictions = model.predict(img_array)
 
-@app.route('/api/classify/<string:input_string>', methods=['GET'])
-def classify(input_string):
-    response = co.classify(
-    model='large',
-    inputs=[input_string],
-    examples=[Example("What is your favorite color?", "0"), Example("Do you like pizza?", "0"), Example("What is your pet\'s name?", "0"), Example("What is your favorite TV show?", "0"), Example("Have you ever been to Disneyland?", "0"), Example("What is your favorite sports team?", "0"), Example("Do you play any musical instruments?", "0"), Example("What is your favorite video game?", "0"), Example("Have you read any books recently?", "0"), Example("What is your favorite holiday?", "0"), Example("What is your favorite movie?", "0"), Example("What is your dream travel destination?", "0"), Example("Do you enjoy cooking?", "0"), Example("What is your favorite hobby?", "0"), Example("What is your favorite genre of music?", "0"), Example("Have you ever climbed a mountain?", "0"), Example("What is your favorite social media platform?", "0"), Example("Do you prefer coffee or tea?", "0"), Example("What is your favorite season?", "0"), Example("Have you ever attended a live concert?", "0"), Example("What is the capital of France?", "1"), Example("Solve for x: 2x + 5 = 15", "1"), Example("Who wrote the novel \'Pride and Prejudice\'?", "1"), Example("What are the three states of matter?", "1"), Example("What is the chemical symbol for gold?", "1"), Example("Explain the process of photosynthesis.", "1"), Example("What is the quadratic formula?", "1"), Example("What is the meaning of the word \'ambivalent\'?", "1"), Example("Compare and contrast mitosis and meiosis.", "1"), Example("What is the significance of the theory of relativity?", "1"), Example("What is the Pythagorean theorem?", "1"), Example("Describe the process of cellular respiration.", "1"), Example("Who is considered the father of modern physics?", "1"), Example("What is the definition of a derivative?", "1"), Example("Explain the concept of supply and demand.", "1"), Example("What is the role of the Supreme Court?", "1"), Example("Discuss the impact of globalization on the economy.", "1"), Example("What are the major principles of ethics?", "1"), Example("Explain the concept of algorithm complexity.", "1"), Example("What is the significance of the Higgs boson discovery?", "1")])
-    print(response.classifications[0].prediction)
+    # Get the class index with the highest probability
+    predicted_class_index = np.argmax(predictions)
+    category = "unsure"
+    if predicted_class_index == 0:
+        category = "no tumor"
+    elif predicted_class_index == 1:
+        category = "tumor"
 
-    return(response.classifications[0].prediction)
+    # Return the predicted class and probability
+    response = {
+        'class_index': category,
+        'probability': float(predictions[0][predicted_class_index])
+    }
+
+    return jsonify(response)
 
 
 if __name__ == "__main__":
