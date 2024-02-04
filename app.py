@@ -18,6 +18,40 @@ from tensorflow.keras.optimizers import RMSprop
 
 import tensorflow as tf
 
+pneumonia_train = ImageDataGenerator(rescale = 1/255)
+pneumonia_validation = ImageDataGenerator(rescale = 1/255)
+
+pneumonia_train_dataset = pneumonia_train.flow_from_directory("./pneumonia data/train", 
+                                          target_size = (400,400), 
+                                          batch_size = 16, 
+                                          class_mode = 'binary')
+
+pneumonia_validation_dataset = pneumonia_validation.flow_from_directory("./pneumonia data/test", 
+                                          target_size = (400,400), 
+                                          batch_size = 16, 
+                                          class_mode = 'binary')
+
+pneumonia_model = tf.keras.models.Sequential([ tf.keras.layers.Conv2D(16,(3,3), activation = 'relu', input_shape  = (400,400,3)),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Conv2D(32,(3,3), activation = 'relu'),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Conv2D(64,(3,3), activation = 'relu'),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Flatten(),
+tf.keras.layers.Dense(512, activation = 'relu'),
+tf.keras.layers.Dense(1,activation = 'sigmoid')
+]
+)
+
+pneumonia_model.compile(loss='binary_crossentropy',
+              optimizer=RMSprop(lr=0.01),
+              metrics=['accuracy'])
+
+model_fit = pneumonia_model.fit(pneumonia_train_dataset, 
+                      steps_per_epoch=16, 
+                      epochs=5,
+                      validation_data=pneumonia_validation_dataset)
+
 arthritis_train_datagen = ImageDataGenerator(rescale = 1/255)
 arthritis_validation_datagen = ImageDataGenerator(rescale = 1/255)
 
@@ -173,6 +207,42 @@ def predict_arthritis():
         percent = probability
     elif probability <= 0.5:
         val = "not arthritis"
+        percent = 1 - probability
+    # Return the predicted class and probability
+    response = {
+        'class_index': str(val),
+        'probability': str(percent)
+    }
+
+    return jsonify(response)
+
+@app.route('/predict_pneumonia', methods=['POST'])
+def predict_pneumonia():
+    # Get the image URL from the request
+    data = request.get_json()
+    image_url = data.get('url')
+
+    # Fetch the image from the URL
+    response = requests.get(image_url)
+
+    img = tf.keras.preprocessing.image.load_img(BytesIO(response.content), target_size=(400, 400))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)  # Create a batch
+    img_array = img_array / 255.0  # Rescale the image
+
+    # Make predictions
+    predictions = pneumonia_model.predict(img_array)
+
+    # Interpret the predictions as probabilities
+    probability = predictions[0][0]
+    # Make predictions
+    val = "unsure"
+    percent = 0
+    if probability > 0.5:
+        val = "pneumonia"
+        percent = probability
+    elif probability <= 0.5:
+        val = "not pneumonia"
         percent = 1 - probability
     # Return the predicted class and probability
     response = {
