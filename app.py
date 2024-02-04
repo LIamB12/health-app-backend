@@ -9,8 +9,49 @@ from tensorflow.keras import layers, models
 import requests
 from io import BytesIO
 
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-import matplotlib.pyplot as plt
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.optimizers import RMSprop
+
+import tensorflow as tf
+
+arthritis_train_datagen = ImageDataGenerator(rescale = 1/255)
+arthritis_validation_datagen = ImageDataGenerator(rescale = 1/255)
+
+arthritis_train_dataset = arthritis_train_datagen.flow_from_directory("./arthritis_data/train", 
+                                          target_size = (400,400), 
+                                          batch_size = 32, 
+                                          class_mode = 'binary')
+
+arthritis_validation_dataset = arthritis_validation_datagen.flow_from_directory("./arthritis_data/validate", 
+                                          target_size = (400,400), 
+                                          batch_size = 32, 
+                                          class_mode = 'binary')
+
+arthritis_model = tf.keras.models.Sequential([ tf.keras.layers.Conv2D(16,(3,3), activation = 'relu', input_shape  = (400,400,3)),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Conv2D(32,(3,3), activation = 'relu'),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Conv2D(64,(3,3), activation = 'relu'),
+tf.keras.layers.MaxPool2D(2,2),
+tf.keras.layers.Flatten(),
+tf.keras.layers.Dense(512, activation = 'relu'),
+tf.keras.layers.Dense(1,activation = 'sigmoid')
+]
+)
+
+arthritis_model.compile(loss='binary_crossentropy',
+              optimizer=RMSprop(lr=0.01),
+              metrics=['accuracy'])
+
+arthritis_model_fit = arthritis_model.fit(arthritis_train_dataset, 
+                      steps_per_epoch=50, 
+                      epochs=5,
+                      validation_data=arthritis_validation_dataset)
+
 
 brain_train_datagen = ImageDataGenerator(
     rescale=1.0/255.0,
@@ -71,34 +112,10 @@ app = Flask(__name__)
 CORS(app)
 api = Api(app)
 
-@app.route('/predict', methods=['POST'])
-def predict():
-
-    req = request.get_json()
-    print(req.get("url"))
-    '''
-    # Get the image file from the request
-    img = tf.keras.preprocessing.image.load_img(file, target_size=(224, 224))
-    img_array = tf.keras.preprocessing.image.img_to_array(img)
-    img_array = tf.expand_dims(img_array, 0)  # Create a batch
-
-    predictions = model.predict(img_array)
-
-    # Get the class index with the highest probability
-    predicted_class_index = np.argmax(predictions)
-
-    # Return the predicted class and probability
-    '''
-    response = {
-        'class_index': "hello",
-        'probability': "bye"
-    }
-
-    return jsonify(response)
     
 
 @app.route('/predict_brain_tumor', methods=['POST'])
-def predict_url():
+def predict_brain_tumor():
     # Get the image URL from the request
     data = request.get_json()
     image_url = data.get('url')
@@ -106,7 +123,6 @@ def predict_url():
 
     # Fetch the image from the URL
     response = requests.get(image_url)
-    print(response)
     img = tf.keras.preprocessing.image.load_img(BytesIO(response.content), target_size=(224, 224))
     img_array = tf.keras.preprocessing.image.img_to_array(img)
     img_array = tf.keras.applications.mobilenet.preprocess_input(np.expand_dims(img_array, axis=0))
@@ -126,6 +142,42 @@ def predict_url():
     response = {
         'class_index': category,
         'probability': float(predictions[0][predicted_class_index])
+    }
+
+    return jsonify(response)
+
+@app.route('/predict_arthritis', methods=['POST'])
+def predict_arthritis():
+    # Get the image URL from the request
+    data = request.get_json()
+    image_url = data.get('url')
+
+    # Fetch the image from the URL
+    response = requests.get(image_url)
+
+    img = tf.keras.preprocessing.image.load_img(BytesIO(response.content), target_size=(400, 400))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)  # Create a batch
+    img_array = img_array / 255.0  # Rescale the image
+
+    # Make predictions
+    predictions = arthritis_model.predict(img_array)
+
+    # Interpret the predictions as probabilities
+    probability = predictions[0][0]
+    # Make predictions
+    val = "unsure"
+    percent = 0
+    if probability > 0.5:
+        val = "arthritis"
+        percent = probability
+    elif probability <= 0.5:
+        val = "not arthritis"
+        percent = 1 - probability
+    # Return the predicted class and probability
+    response = {
+        'class_index': str(val),
+        'probability': str(percent)
     }
 
     return jsonify(response)
