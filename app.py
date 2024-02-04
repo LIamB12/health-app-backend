@@ -12,58 +12,58 @@ from io import BytesIO
 
 import matplotlib.pyplot as plt
 
-train_datagen = ImageDataGenerator(
+brain_train_datagen = ImageDataGenerator(
     rescale=1.0/255.0,
     shear_range=0.2,
     zoom_range=0.2,
     horizontal_flip=True
 )
 
-test_datagen = ImageDataGenerator(rescale=1.0/255.0)
+brain_test_datagen = ImageDataGenerator(rescale=1.0/255.0)
 
-train_generator = train_datagen.flow_from_directory(
+brain_train_generator = brain_train_datagen.flow_from_directory(
     './brain_tumor_dataset/train',
     target_size=(224, 224),  # MobileNet input size
     batch_size=32,
     class_mode='categorical'
 )
 
-test_generator = test_datagen.flow_from_directory(
+brain_test_generator = brain_test_datagen.flow_from_directory(
     './brain_tumor_dataset/test',
     target_size=(224, 224),
     batch_size=32,
     class_mode='categorical'
 )
 
-base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+brain_base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
 
 # Freeze the layers of the pre-trained model
-for layer in base_model.layers:
+for layer in brain_base_model.layers:
     layer.trainable = False
 
-model = models.Sequential()
+brain_model = models.Sequential()
 
 # Add MobileNet base
-model.add(base_model)
+brain_model.add(brain_base_model)
 
 # Add custom layers
-model.add(layers.GlobalAveragePooling2D())
-model.add(layers.Dense(256, activation='relu'))
-model.add(layers.Dropout(0.5))
-model.add(layers.Dense(2, activation='softmax'))  # num_classes is the number of your custom categories
+brain_model.add(layers.GlobalAveragePooling2D())
+brain_model.add(layers.Dense(256, activation='relu'))
+brain_model.add(layers.Dropout(0.5))
+brain_model.add(layers.Dense(2, activation='softmax'))  # num_classes is the number of your custom categories
 
-model.compile(optimizer='adam',
+brain_model.compile(optimizer='adam',
               loss='categorical_crossentropy',
               metrics=['accuracy'])
 
-model.fit(train_generator, epochs=50, validation_data=test_generator)
+brain_model.fit(brain_train_generator, epochs=5, validation_data=brain_test_generator)
 
 # Example for making predictions
 img = tf.keras.preprocessing.image.load_img('./brain_tumor_dataset/test/yes/Y185.JPG', target_size=(224, 224))
 img_array = tf.keras.preprocessing.image.img_to_array(img)
 img_array = tf.expand_dims(img_array, 0)  # Create a batch
 
-predictions = model.predict(img_array)
+predictions = brain_model.predict(img_array)
 print(predictions)
 
 
@@ -97,7 +97,7 @@ def predict():
     return jsonify(response)
     
 
-@app.route('/predict_url', methods=['POST'])
+@app.route('/predict_brain_tumor', methods=['POST'])
 def predict_url():
     # Get the image URL from the request
     data = request.get_json()
@@ -112,7 +112,7 @@ def predict_url():
     img_array = tf.keras.applications.mobilenet.preprocess_input(np.expand_dims(img_array, axis=0))
 
     # Make predictions
-    predictions = model.predict(img_array)
+    predictions = brain_model.predict(img_array)
 
     # Get the class index with the highest probability
     predicted_class_index = np.argmax(predictions)
